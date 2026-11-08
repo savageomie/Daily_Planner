@@ -1,0 +1,6 @@
+{
+  "name": "Horizon - Goals & Daily Timeline Manager",
+  "description": "Monthly milestone planning, daily category-based execution grid, and weekly, monthly, and yearly progress visualizations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
