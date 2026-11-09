@@ -15,6 +15,7 @@ export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'anytime';
 
 export interface Milestone {
   id: string;
+  userId?: string;
   title: string;
   description?: string;
   categoryId: string;
@@ -33,9 +34,25 @@ export interface DayRecord {
   energyLevel?: 1 | 2 | 3 | 4 | 5;
 }
 
+export interface CustomTask {
+  id: string;
+  userId?: string;
+  date: string; // "YYYY-MM-DD"
+  title: string;
+  completed: boolean;
+  createdAt: string;
+}
+
 export type RecordsMap = Record<string, DayRecord>; // key: "YYYY-MM-DD"
 
 export type ActiveTab = 'matrix' | 'cards' | 'day' | 'calendar' | 'analytics';
+
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+}
 
 export interface AppState {
   currentMonth: string; // "YYYY-MM"
@@ -44,6 +61,7 @@ export interface AppState {
   selectedCategory: string; // 'all' or categoryId
   milestones: Milestone[];
   records: RecordsMap;
+  tasks: CustomTask[];
   categories: Category[];
   darkMode: boolean;
 }

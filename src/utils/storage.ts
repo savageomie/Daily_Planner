@@ -127,15 +127,10 @@ export function getInitialMilestones(monthStr: string): Milestone[] {
 
 export function getInitialRecords(monthStr: string): RecordsMap {
   const records: RecordsMap = {};
-  
-  // Create sample entries for the first 6 days of the month to give immediate visual payoff
   const sampleData: Record<number, { completed: string[]; note?: string; energy?: 1 | 2 | 3 | 4 | 5 }> = {
-    1: { completed: ['m1', 'm3', 'm4', 'm5'], note: 'Great start to the month! Re-energized and focused.', energy: 4 },
-    2: { completed: ['m1', 'm2', 'm3', 'm4', 'm6'], note: 'Crushed the deep work session on architecture refactoring.', energy: 5 },
+    1: { completed: ['m1', 'm3', 'm4', 'm5'], note: 'Great start to the month!', energy: 4 },
+    2: { completed: ['m1', 'm2', 'm3', 'm4', 'm6'], note: 'Crushed the deep work session.', energy: 5 },
     3: { completed: ['m1', 'm2', 'm4', 'm5'], note: 'Felt tired in the evening but completed workouts.', energy: 3 },
-    4: { completed: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'], note: 'Perfect streak day! 100% completion.', energy: 5 },
-    5: { completed: ['m1', 'm2', 'm4', 'm6'], note: 'Pushed code commit and maintained hydration.', energy: 4 },
-    6: { completed: ['m1', 'm2'], note: 'Current day in progress — morning routines done.', energy: 4 },
   };
 
   Object.entries(sampleData).forEach(([dayNum, data]) => {
@@ -151,11 +146,11 @@ export function getInitialRecords(monthStr: string): RecordsMap {
   return records;
 }
 
-const STORAGE_KEY = 'horizon_goals_manager_state_v1';
+const STORAGE_KEY_PREFIX = 'horizon_goals_manager_v2_';
 
-export function loadStoredState(): Partial<AppState> | null {
+export function loadStoredState(userKey = 'guest'): Partial<AppState> | null {
   try {
-    const serialized = localStorage.getItem(STORAGE_KEY);
+    const serialized = localStorage.getItem(`${STORAGE_KEY_PREFIX}${userKey}`);
     if (!serialized) return null;
     return JSON.parse(serialized);
   } catch (err) {
@@ -164,41 +159,44 @@ export function loadStoredState(): Partial<AppState> | null {
   }
 }
 
-export function saveStateToStorage(state: AppState): void {
+export function saveStateToStorage(state: AppState, userKey = 'guest'): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}${userKey}`, JSON.stringify(state));
   } catch (err) {
     console.error('Failed to save state to localStorage', err);
   }
 }
 
-export function getInitialAppState(): AppState {
+// Requirement 2: Initially blank for users
+export function getInitialAppState(userKey = 'guest'): AppState {
   const currentMonth = getCurrentMonthString();
   const today = getTodayDateString();
 
-  const saved = loadStoredState();
+  const saved = loadStoredState(userKey);
 
-  if (saved && saved.milestones && saved.milestones.length > 0) {
+  if (saved) {
     return {
       currentMonth: saved.currentMonth || currentMonth,
       selectedDate: saved.selectedDate || today,
       activeTab: saved.activeTab || 'matrix',
       selectedCategory: saved.selectedCategory || 'all',
-      milestones: saved.milestones,
+      milestones: saved.milestones || [],
       records: saved.records || {},
+      tasks: saved.tasks || [],
       categories: saved.categories || DEFAULT_CATEGORIES,
       darkMode: saved.darkMode ?? false,
     };
   }
 
-  // Fallback to fresh initial state with rich sample data
+  // Pure clean, blank slate as requested by user
   return {
     currentMonth,
     selectedDate: today,
     activeTab: 'matrix',
     selectedCategory: 'all',
-    milestones: getInitialMilestones(currentMonth),
-    records: getInitialRecords(currentMonth),
+    milestones: [],
+    records: {},
+    tasks: [],
     categories: DEFAULT_CATEGORIES,
     darkMode: false,
   };

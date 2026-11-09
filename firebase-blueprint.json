@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "User auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "description": "User avatar photo URL" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Last updated timestamp" }
+      },
+      "required": ["userId", "email"]
+    },
+    "Milestone": {
+      "title": "Milestone",
+      "description": "User recurring milestone or habit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Milestone ID" },
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "title": { "type": "string", "description": "Milestone title" },
+        "description": { "type": "string", "description": "Optional notes or intention" },
+        "categoryId": { "type": "string", "description": "Category identifier" },
+        "frequency": { "type": "string", "description": "daily, weekdays, weekends, or custom" },
+        "timeOfDay": { "type": "string", "description": "morning, afternoon, evening, anytime" },
+        "targetMonth": { "type": "string", "description": "Target month YYYY-MM" },
+        "targetMinutes": { "type": "number", "description": "Optional duration in minutes" },
+        "priority": { "type": "string", "description": "high, medium, or low" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "userId", "title", "categoryId", "frequency", "timeOfDay", "targetMonth"]
+    },
+    "DayRecord": {
+      "title": "DayRecord",
+      "description": "Daily completion records for milestones, notes, and energy levels",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date in YYYY-MM-DD format" },
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "completedMilestoneIds": { "type": "array", "description": "List of completed milestone IDs" },
+        "note": { "type": "string", "description": "Daily reflection note" },
+        "energyLevel": { "type": "number", "description": "Energy level 1 to 5" }
+      },
+      "required": ["date", "userId", "completedMilestoneIds"]
+    },
+    "CustomTask": {
+      "title": "CustomTask",
+      "description": "Day-specific single task that is non-repetitive",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Task ID" },
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "date": { "type": "string", "description": "Target date YYYY-MM-DD" },
+        "title": { "type": "string", "description": "Task description or title" },
+        "completed": { "type": "boolean", "description": "Whether the task was completed" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "userId", "date", "title", "completed"]
+    },
+    "UserCategory": {
+      "title": "UserCategory",
+      "description": "Custom category created by the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Category ID" },
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "name": { "type": "string", "description": "Category display name" },
+        "color": { "type": "string", "description": "Hex color code" },
+        "accentBg": { "type": "string", "description": "Tailwind bg class" },
+        "accentText": { "type": "string", "description": "Tailwind text class" },
+        "borderColor": { "type": "string", "description": "Tailwind border class" },
+        "iconName": { "type": "string", "description": "Lucide icon name" }
+      },
+      "required": ["id", "userId", "name", "color", "iconName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Individual user profile"
+    },
+    "/users/{userId}/milestones/{milestoneId}": {
+      "schema": "Milestone",
+      "description": "User recurring milestones"
+    },
+    "/users/{userId}/records/{date}": {
+      "schema": "DayRecord",
+      "description": "Daily record of completed milestones and notes"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "CustomTask",
+      "description": "User day-specific tasks"
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": "UserCategory",
+      "description": "User custom milestone categories"
+    }
+  }
+}

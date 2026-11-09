@@ -1,6 +1,6 @@
 import React from 'react';
-import { Plus, Sun, Moon, Database, Sparkles } from 'lucide-react';
-import { ActiveTab } from '../types';
+import { Plus, Sun, Moon, Database, Sparkles, User, Cloud } from 'lucide-react';
+import { ActiveTab, AuthUser } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
@@ -10,6 +10,8 @@ interface HeaderProps {
   darkMode: boolean;
   onToggleDarkMode: () => void;
   onOpenDataModal: () => void;
+  user: AuthUser | null;
+  onOpenAuthModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,6 +21,8 @@ export const Header: React.FC<HeaderProps> = ({
   darkMode,
   onToggleDarkMode,
   onOpenDataModal,
+  user,
+  onOpenAuthModal,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
@@ -70,6 +74,37 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Zone 3: 1 primary action + subtle utilities */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* User Account / Cloud Sync Pill */}
+            {user ? (
+              <button
+                type="button"
+                onClick={onOpenAuthModal}
+                className="flex items-center gap-1.5 p-1 sm:px-2.5 sm:py-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title={`Signed in as ${user.email} (Cloud Sync Active)`}
+              >
+                <div className="w-6 h-6 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.displayName || 'Avatar'} className="w-full h-full object-cover" />
+                  ) : (
+                    (user.displayName || user.email || 'U').charAt(0).toUpperCase()
+                  )}
+                </div>
+                <span className="hidden sm:inline text-xs font-semibold text-slate-700 dark:text-slate-300 max-w-[100px] truncate">
+                  {user.displayName || user.email?.split('@')[0]}
+                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Cloud Sync Active" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenAuthModal}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
+              >
+                <User className="w-3.5 h-3.5 text-slate-400" />
+                <span>Sign In</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onToggleDarkMode}

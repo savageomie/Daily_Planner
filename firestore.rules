@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User profile and subcollections: private to the owner
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) && isValidId(userId);
+
+      // Milestones subcollection
+      match /milestones/{milestoneId} {
+        allow read, write: if isOwner(userId) && isValidId(milestoneId);
+      }
+
+      // Records subcollection
+      match /records/{recordId} {
+        allow read, write: if isOwner(userId) && isValidId(recordId);
+      }
+
+      // Day-specific custom tasks subcollection
+      match /tasks/{taskId} {
+        allow read, write: if isOwner(userId) && isValidId(taskId);
+      }
+
+      // Custom categories subcollection
+      match /categories/{categoryId} {
+        allow read, write: if isOwner(userId) && isValidId(categoryId);
+      }
+    }
+  }
+}

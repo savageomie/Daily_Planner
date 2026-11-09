@@ -11,6 +11,7 @@ import {
   Milestone,
   Category,
   DayRecord,
+  CustomTask,
 } from './types';
 import {
   getInitialAppState,
@@ -25,6 +26,21 @@ import {
   getTodayDateString,
   getCurrentMonthString,
 } from './utils/dateUtils';
+import { useAuth } from './context/AuthContext';
+import {
+  subscribeToUserMilestones,
+  subscribeToUserRecords,
+  subscribeToUserTasks,
+  subscribeToUserCategories,
+  saveMilestoneToFirestore,
+  deleteMilestoneFromFirestore,
+  saveRecordToFirestore,
+  saveCustomTaskToFirestore,
+  deleteCustomTaskFromFirestore,
+  saveCategoryToFirestore,
+  saveUserProfile,
+} from './services/firestoreSync';
+
 import { Header } from './components/Header';
 import { Toolbar } from './components/Toolbar';
 import { DailyBoxesMatrixView } from './components/DailyBoxesMatrixView';
@@ -36,23 +52,69 @@ import { MilestoneModal } from './components/MilestoneModal';
 import { CategoryModal } from './components/CategoryModal';
 import { DayDetailModal } from './components/DayDetailModal';
 import { ExportImportModal } from './components/ExportImportModal';
+import { AuthModal } from './components/AuthModal';
 
 export default function App() {
-  const [state, setState] = useState<AppState>(() => getInitialAppState());
+  const { user, loading: authLoading } = useAuth();
+  const [state, setState] = useState<AppState>(() => getInitialAppState('guest'));
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Modals state
+
+  // Modals
   const [isMilestoneModalOpen, setIsMilestoneModalOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isDayDetailOpen, setIsDayDetailOpen] = useState(false);
   const [inspectedDate, setInspectedDate] = useState<string>(getTodayDateString());
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  // Sync state to localStorage whenever state changes
+  // Sync state with Firestore when user logs in
   useEffect(() => {
-    saveStateToStorage(state);
-  }, [state]);
+    if (!user) {
+      // Guest mode: load guest local state
+      setState(getInitialAppState('guest'));
+      return;
+    }
+
+    // Save user profile info in Firestore
+    saveUserProfile(user.uid, {
+      email: user.email,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
+    });
+
+    // Real-time Firestore subscriptions for this user
+    const unsubMilestones = subscribeToUserMilestones(user.uid, (cloudMilestones) => {
+      setState((prev) => ({ ...prev, milestones: cloudMilestones }));
+    });
+
+    const unsubRecords = subscribeToUserRecords(user.uid, (cloudRecords) => {
+      setState((prev) => ({ ...prev, records: cloudRecords }));
+    });
+
+    const unsubTasks = subscribeToUserTasks(user.uid, (cloudTasks) => {
+      setState((prev) => ({ ...prev, tasks: cloudTasks }));
+    });
+
+    const unsubCategories = subscribeToUserCategories(user.uid, (cloudCategories) => {
+      if (cloudCategories.length > 0) {
+        setState((prev) => ({ ...prev, categories: cloudCategories }));
+      }
+    });
+
+    return () => {
+      unsubMilestones();
+      unsubRecords();
+      unsubTasks();
+      unsubCategories();
+    };
+  }, [user]);
+
+  // Sync state to localStorage for offline cache
+  useEffect(() => {
+    const userKey = user ? user.uid : 'guest';
+    saveStateToStorage(state, userKey);
+  }, [state, user]);
 
   // Sync dark mode class on HTML document element
   useEffect(() => {
@@ -72,25 +134,17 @@ export default function App() {
   };
 
   const handleChangeMonth = (newMonth: string) => {
-    setState((prev) => {
-      // Check if any milestones exist for this new month; if not, keep existing or generate for month
-      const monthMilestones = prev.milestones.some((m) => m.targetMonth === newMonth)
-        ? prev.milestones
-        : [...prev.milestones, ...getInitialMilestones(newMonth)];
-
-      return {
-        ...prev,
-        currentMonth: newMonth,
-        milestones: monthMilestones,
-      };
-    });
+    setState((prev) => ({
+      ...prev,
+      currentMonth: newMonth,
+    }));
   };
 
   const handleSelectCategory = (categoryId: string) => {
     setState((prev) => ({ ...prev, selectedCategory: categoryId }));
   };
 
-  // Milestone check toggle
+  // Milestone tick toggle
   const handleToggleTick = (milestoneId: string, dateStr: string) => {
     setState((prev) => {
       const existingRecord = prev.records[dateStr] || { completedMilestoneIds: [] };
@@ -101,15 +155,17 @@ export default function App() {
         ? currentCompleted.filter((id) => id !== milestoneId)
         : [...currentCompleted, milestoneId];
 
-      const updatedRecords = {
-        ...prev.records,
-        [dateStr]: {
-          ...existingRecord,
-          completedMilestoneIds: nextCompleted,
-        },
+      const updatedRecord: DayRecord = {
+        ...existingRecord,
+        completedMilestoneIds: nextCompleted,
       };
 
-      // Check if all scheduled milestones for today were just finished
+      // Sync with Firestore if logged in
+      if (user) {
+        saveRecordToFirestore(user.uid, dateStr, updatedRecord);
+      }
+
+      // Check for celebration confetti on today
       const todayStr = getTodayDateString();
       if (!isAlreadyDone && dateStr === todayStr) {
         const scheduledToday = prev.milestones.filter((m) =>
@@ -129,23 +185,36 @@ export default function App() {
 
       return {
         ...prev,
-        records: updatedRecords,
+        records: {
+          ...prev.records,
+          [dateStr]: updatedRecord,
+        },
       };
     });
   };
 
   // Save (create or update) milestone
   const handleSaveMilestone = (milestone: Milestone) => {
+    const milestoneWithUser = {
+      ...milestone,
+      userId: user?.uid,
+    };
+
     setState((prev) => {
       const exists = prev.milestones.some((m) => m.id === milestone.id);
       const updatedMilestones = exists
-        ? prev.milestones.map((m) => (m.id === milestone.id ? milestone : m))
-        : [...prev.milestones, milestone];
+        ? prev.milestones.map((m) => (m.id === milestone.id ? milestoneWithUser : m))
+        : [...prev.milestones, milestoneWithUser];
+
       return {
         ...prev,
         milestones: updatedMilestones,
       };
     });
+
+    if (user) {
+      saveMilestoneToFirestore(user.uid, milestoneWithUser);
+    }
     setEditingMilestone(null);
   };
 
@@ -156,6 +225,10 @@ export default function App() {
       ...prev,
       milestones: prev.milestones.filter((m) => m.id !== milestoneId),
     }));
+
+    if (user) {
+      deleteMilestoneFromFirestore(user.uid, milestoneId);
+    }
   };
 
   // Create new category
@@ -164,23 +237,87 @@ export default function App() {
       ...prev,
       categories: [...prev.categories, newCat],
     }));
+
+    if (user) {
+      saveCategoryToFirestore(user.uid, newCat);
+    }
   };
 
   // Save day note / energy
   const handleSaveDayRecord = (dateStr: string, partial: Partial<DayRecord>) => {
     setState((prev) => {
       const existing = prev.records[dateStr] || { completedMilestoneIds: [] };
+      const updated: DayRecord = {
+        ...existing,
+        ...partial,
+      };
+
+      if (user) {
+        saveRecordToFirestore(user.uid, dateStr, updated);
+      }
+
       return {
         ...prev,
         records: {
           ...prev.records,
-          [dateStr]: {
-            ...existing,
-            ...partial,
-          },
+          [dateStr]: updated,
         },
       };
     });
+  };
+
+  // Day-specific custom tasks handlers
+  const handleAddCustomTask = (dateStr: string, title: string) => {
+    const newTask: CustomTask = {
+      id: `task_${Date.now()}`,
+      userId: user?.uid,
+      date: dateStr,
+      title: title.trim(),
+      completed: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    setState((prev) => ({
+      ...prev,
+      tasks: [...(prev.tasks || []), newTask],
+    }));
+
+    if (user) {
+      saveCustomTaskToFirestore(user.uid, newTask);
+    }
+  };
+
+  const handleToggleCustomTask = (taskId: string) => {
+    setState((prev) => {
+      let updatedTask: CustomTask | undefined;
+      const updatedTasks = (prev.tasks || []).map((t) => {
+        if (t.id === taskId) {
+          updatedTask = { ...t, completed: !t.completed };
+          return updatedTask;
+        }
+        return t;
+      });
+
+      if (user && updatedTask) {
+        saveCustomTaskToFirestore(user.uid, updatedTask);
+      }
+
+      return {
+        ...prev,
+        tasks: updatedTasks,
+      };
+    });
+  };
+
+  const handleDeleteCustomTask = (taskId: string) => {
+    setState((prev) => ({
+      ...prev,
+      tasks: (prev.tasks || []).filter((t) => t.id !== taskId),
+    }));
+
+    if (user) {
+      deleteCustomTaskFromFirestore(user.uid, taskId);
+    }
   };
 
   // Open day detail
@@ -189,26 +326,30 @@ export default function App() {
     setIsDayDetailOpen(true);
   };
 
-  // Reset to sample data
-  const handleResetSampleData = () => {
-    const curMonth = getCurrentMonthString();
-    const today = getTodayDateString();
-    setState({
-      currentMonth: curMonth,
-      selectedDate: today,
-      activeTab: 'matrix',
-      selectedCategory: 'all',
-      milestones: getInitialMilestones(curMonth),
-      records: getInitialRecords(curMonth),
-      categories: DEFAULT_CATEGORIES,
-      darkMode: state.darkMode,
-    });
+  // Optional: user can load sample routine if they want a starting point
+  const handleLoadSampleRoutine = () => {
+    const curMonth = state.currentMonth;
+    const sampleMilestones = getInitialMilestones(curMonth);
+    const sampleRecords = getInitialRecords(curMonth);
+
+    setState((prev) => ({
+      ...prev,
+      milestones: sampleMilestones,
+      records: sampleRecords,
+    }));
+
+    if (user) {
+      sampleMilestones.forEach((m) => saveMilestoneToFirestore(user.uid, m));
+      Object.entries(sampleRecords).forEach(([d, rec]) =>
+        saveRecordToFirestore(user.uid, d, rec)
+      );
+    }
   };
 
   // Milestone counts by category
   const milestoneCountsByCategory = useMemo(() => {
     const counts: Record<string, number> = {};
-    state.milestones.forEach((m) => {
+    (state.milestones || []).forEach((m) => {
       if (m.targetMonth === state.currentMonth) {
         counts[m.categoryId] = (counts[m.categoryId] || 0) + 1;
       }
@@ -223,7 +364,7 @@ export default function App() {
     let totalDone = 0;
 
     dates.forEach((d) => {
-      state.milestones.forEach((m) => {
+      (state.milestones || []).forEach((m) => {
         if (isMilestoneScheduledForDate(m, d)) {
           totalScheduled += 1;
           if (state.records[d]?.completedMilestoneIds?.includes(m.id)) {
@@ -238,12 +379,12 @@ export default function App() {
 
   // Milestones filtered for current month
   const activeMonthMilestones = useMemo(() => {
-    return state.milestones.filter((m) => m.targetMonth === state.currentMonth);
+    return (state.milestones || []).filter((m) => m.targetMonth === state.currentMonth);
   }, [state.milestones, state.currentMonth]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
-      {/* Top Bar Header adhering to 3-zone contract */}
+      {/* Top Bar Header with Auth Status & PWA Install */}
       <Header
         activeTab={state.activeTab}
         onSelectTab={handleSelectTab}
@@ -254,6 +395,8 @@ export default function App() {
         darkMode={state.darkMode}
         onToggleDarkMode={toggleDarkMode}
         onOpenDataModal={() => setIsDataModalOpen(true)}
+        user={user}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
       {/* Secondary Workspace Toolbar: Month Navigator & Category Filters */}
@@ -316,12 +459,16 @@ export default function App() {
             milestones={activeMonthMilestones}
             categories={state.categories}
             dayRecord={state.records[state.selectedDate]}
+            tasks={state.tasks || []}
             onToggleTick={handleToggleTick}
             onSaveDayRecord={handleSaveDayRecord}
             onOpenNewMilestone={() => {
               setEditingMilestone(null);
               setIsMilestoneModalOpen(true);
             }}
+            onAddCustomTask={handleAddCustomTask}
+            onToggleCustomTask={handleToggleCustomTask}
+            onDeleteCustomTask={handleDeleteCustomTask}
           />
         )}
 
@@ -385,7 +532,12 @@ export default function App() {
         onClose={() => setIsDataModalOpen(false)}
         appState={state}
         onImportState={(newState) => setState(newState)}
-        onResetSampleData={handleResetSampleData}
+        onResetSampleData={handleLoadSampleRoutine}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
     </div>
   );
